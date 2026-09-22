@@ -16,15 +16,29 @@ export default function Practice({
     if (!activeWorldId && audioEnabled) {
       narrate(worldSelectNarration(), true);
     }
-    return () => stopNarration();
   }, [activeWorldId, audioEnabled]);
+
+  useEffect(() => {
+    return () => stopNarration();
+  }, []);
+
+  const handleSelectWorld = (wId) => {
+    stopNarration();
+    setActiveWorldId(wId);
+  };
+
+  const handleBackToWorlds = () => {
+    stopNarration();
+    setActiveWorldId(null);
+  };
 
   if (activeWorldId) {
     return (
       <WorldRun
         worldId={activeWorldId}
-        onBackToWorlds={() => setActiveWorldId(null)}
+        onBackToWorlds={handleBackToWorlds}
         onFinishWorld={(summary) => {
+          stopNarration();
           onFinishWorld(summary);
           setActiveWorldId(null);
         }}
@@ -37,7 +51,7 @@ export default function Practice({
   return (
     <WorldSelect
       worldsProgress={worldsProgress}
-      onSelectWorld={(wId) => setActiveWorldId(wId)}
+      onSelectWorld={handleSelectWorld}
     />
   );
 }

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { loadProgress, saveProgress, getDefaultProgress } from './core/storage/progressStore';
 import { canOpenPhase } from './core/gamification/unlock';
 import { evaluateBadges } from './content/badges';
-import { setAudioMuted, unlockAudioContext } from './utils/audio';
+import { setAudioMuted, unlockAudioContext, stopNarration } from './utils/audio';
 
 import BackgroundGlyphs from './components/ui/BackgroundGlyphs';
 import TopBar from './components/ui/TopBar';
@@ -56,6 +56,7 @@ export default function App() {
   };
 
   const handleResetProgress = () => {
+    stopNarration();
     if (window.confirm('Reset all lesson progress and start from the beginning?')) {
       const defaultState = getDefaultProgress();
       setProgress(defaultState);
@@ -65,18 +66,21 @@ export default function App() {
   };
 
   const handleNavigate = (phaseKey) => {
+    stopNarration();
     if (canOpenPhase(phaseKey, progress.phases)) {
       setCurrentView(phaseKey);
     }
   };
 
   const handleStartJourney = () => {
+    stopNarration();
     // Always start from Wonder phase (Phase 1)
     setCurrentView('wonder');
   };
 
   // Phase completions
   const handleWonderComplete = () => {
+    stopNarration();
     setProgress((prev) => {
       const next = {
         ...prev,
@@ -99,6 +103,7 @@ export default function App() {
   };
 
   const handleStoryComplete = () => {
+    stopNarration();
     setProgress((prev) => {
       const next = {
         ...prev,
@@ -153,6 +158,7 @@ export default function App() {
   };
 
   const handleSimulateComplete = () => {
+    stopNarration();
     setProgress((prev) => ({
       ...prev,
       phases: {

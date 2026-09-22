@@ -53,7 +53,9 @@ export default function WorldRun({
 
   // Initialize questions
   useEffect(() => {
-    const runQuestions = generateRun(worldId, Date.now(), seenHashes);
+    const seedPool = [42, 101, 202, 303];
+    const seed = seedPool[Math.floor(Math.random() * seedPool.length)];
+    const runQuestions = generateRun(worldId, seed, seenHashes);
     setQuestions(runQuestions);
     setQIndex(0);
     setHearts(3);
@@ -148,7 +150,9 @@ export default function WorldRun({
   };
 
   const handleRetryWorld = () => {
-    const runQuestions = generateRun(worldId, Date.now(), seenHashes);
+    const seedPool = [42, 101, 202, 303];
+    const seed = seedPool[Math.floor(Math.random() * seedPool.length)];
+    const runQuestions = generateRun(worldId, seed, seenHashes);
     setQuestions(runQuestions);
     setQIndex(0);
     setHearts(3);

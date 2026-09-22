@@ -14,7 +14,9 @@ let currentQueueSymbol = null;
 let isAudioMuted = false;
 let audioUnlocked = false;
 
-// Audio unlock helper for Safari/Chrome autoplay policy
+/**
+ * Unlock AudioContext on first user gesture for browser autoplay policy
+ */
 export function unlockAudioContext() {
   if (audioUnlocked) return;
   audioUnlocked = true;
@@ -23,12 +25,8 @@ export function unlockAudioContext() {
     if (ctx.state === 'suspended') {
       ctx.resume();
     }
-    // Also init SpeechSynthesis
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.getVoices();
-    }
   } catch (e) {
-    // Ignore audio context errors on restricted environments
+    // Ignore context errors
   }
 }
 
@@ -39,125 +37,101 @@ export function setAudioMuted(muted) {
   }
 }
 
+/**
+ * Immediately stop all playing audio and cancel current narration queue
+ */
 export function stopNarration() {
+  // Invalidate current queue symbol so pending promises abort
   currentQueueSymbol = Symbol('cancelled');
+  
   if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.currentTime = 0;
+    try {
+      currentAudio.pause();
+      currentAudio.currentTime = 0;
+    } catch (e) {
+      // Ignore pause errors
+    }
     currentAudio = null;
   }
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel();
-  }
 }
 
-// Fallback SpeechSynthesis player with British/English female profile
-function speakWithWebSpeech(text, style) {
-  return new Promise((resolve) => {
-    if (!('speechSynthesis' in window) || isAudioMuted) {
-      resolve();
-      return;
-    }
-
-    window.speechSynthesis.cancel();
-
-    // Clean emojis & symbols for natural speech
-    const cleanText = text
-      .replace(/[\u{1F300}-\u{1F9FF}]/gu, '')
-      .replace(/S\$/g, 'Singapore dollars ')
-      .replace(/×/g, ' times ')
-      .replace(/÷/g, ' divided by ')
-      .replace(/k/g, ' kay ');
-
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-
-    // Pick an expressive female English voice if available
-    const voices = window.speechSynthesis.getVoices();
-    const targetVoice = voices.find(v => 
-      (v.lang.includes('en-GB') || v.lang.includes('en-SG') || v.lang.includes('en-US')) &&
-      (v.name.includes('Female') || v.name.includes('Alice') || v.name.includes('Samantha') || v.name.includes('Victoria') || v.name.includes('Google UK English Female') || v.name.includes('Natural'))
-    ) || voices.find(v => v.lang.startsWith('en'));
-
-    if (targetVoice) {
-      utterance.voice = targetVoice;
-    }
-
-    // Adjust rate and pitch by style
-    if (style === 'celebration') {
-      utterance.rate = 1.05;
-      utterance.pitch = 1.15;
-    } else if (style === 'encouragement') {
-      utterance.rate = 1.0;
-      utterance.pitch = 1.1;
-    } else if (style === 'question') {
-      utterance.rate = 0.98;
-      utterance.pitch = 1.08;
-    } else if (style === 'thinking') {
-      utterance.rate = 0.92;
-      utterance.pitch = 0.98;
-    } else {
-      utterance.rate = 0.98;
-      utterance.pitch = 1.02;
-    }
-
-    utterance.onend = () => resolve();
-    utterance.onerror = () => resolve();
-
-    window.speechSynthesis.speak(utterance);
-  });
-}
-
-// Single audio segment playback
+/**
+ * Single audio segment playback using ONLY ElevenLabs Voice ID Xb7hH8MSUJpSbSDYk0k2
+ * @param {{text: string, style?: string, speak?: string}} segment 
+ * @param {Symbol} queueSymbol 
+ */
 function playSegment(segment, queueSymbol) {
   return new Promise((resolve) => {
+    // Check if cancelled or muted before starting
     if (currentQueueSymbol !== queueSymbol || isAudioMuted) {
       resolve();
       return;
     }
 
+    // Halt any leftover audio immediately
+    if (currentAudio) {
+      try {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+      } catch (e) {}
+      currentAudio = null;
+    }
+
     const audioUrl = audioMap[segment.text];
 
-    if (audioUrl) {
-      const audio = new Audio(audioUrl);
-      currentAudio = audio;
-
-      audio.onended = () => {
-        if (currentAudio === audio) currentAudio = null;
-        resolve();
-      };
-
-      audio.onerror = () => {
-        // Fallback to speech synthesis if mp3 fails or is not found
-        speakWithWebSpeech(segment.speak || segment.text, segment.style).then(resolve);
-      };
-
-      audio.play().catch(() => {
-        // Autoplay blocked -> fallback
-        speakWithWebSpeech(segment.speak || segment.text, segment.style).then(resolve);
-      });
-    } else {
-      // Live / fallback speech synthesis
-      speakWithWebSpeech(segment.speak || segment.text, segment.style).then(resolve);
+    if (!audioUrl) {
+      console.warn(`[Audio] Missing mp3 mapping for ElevenLabs voice Xb7hH8MSUJpSbSDYk0k2: "${segment.text}"`);
+      resolve();
+      return;
     }
+
+    const audio = new Audio(audioUrl);
+    currentAudio = audio;
+
+    let cleanupDone = false;
+    const finish = () => {
+      if (cleanupDone) return;
+      cleanupDone = true;
+      if (currentAudio === audio) {
+        currentAudio = null;
+      }
+      resolve();
+    };
+
+    audio.onended = finish;
+    audio.onerror = finish;
+    audio.onpause = () => {
+      // If paused due to stopNarration, resolve immediately
+      if (currentQueueSymbol !== queueSymbol) {
+        finish();
+      }
+    };
+
+    audio.play().catch(() => {
+      finish();
+    });
   });
 }
 
 /**
- * Sequential narration queue with eager preloading
+ * Sequential narration queue using exclusively ElevenLabs Voice ID Xb7hH8MSUJpSbSDYk0k2
  * @param {Array<{text: string, style?: string, speak?: string}>} segments 
  * @param {boolean} autoplay
  */
 export async function narrate(segments, autoplay = true) {
   if (!segments || segments.length === 0 || isAudioMuted || !autoplay) return;
 
+  // Halt any previously playing narration queue immediately
   stopNarration();
+
   const queueSymbol = Symbol('queue');
   currentQueueSymbol = queueSymbol;
 
   for (let i = 0; i < segments.length; i++) {
+    // Stop loop if user navigated or new narration was triggered
     if (currentQueueSymbol !== queueSymbol) break;
 
-    // Eager preload next segment audio
+    // Preload next segment audio for smooth playback
     if (i + 1 < segments.length && audioMap[segments[i + 1].text]) {
       const nextUrl = audioMap[segments[i + 1].text];
       const preloadLink = document.createElement('link');
@@ -169,9 +143,9 @@ export async function narrate(segments, autoplay = true) {
 
     await playSegment(segments[i], queueSymbol);
 
-    // Subtle natural pause between sentences (280ms)
+    // Subtle natural pause between sentences (250ms)
     if (i + 1 < segments.length && currentQueueSymbol === queueSymbol) {
-      await new Promise(r => setTimeout(r, 280));
+      await new Promise(r => setTimeout(r, 250));
     }
   }
 }

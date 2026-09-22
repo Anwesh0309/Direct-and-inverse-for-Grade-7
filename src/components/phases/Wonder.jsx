@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Mascot from '../ui/Mascot';
-import { narrate } from '../../utils/audio';
+import { narrate, stopNarration } from '../../utils/audio';
 import { wonderNarration } from '../../utils/narration';
 
 export default function Wonder({ onComplete, audioEnabled }) {
@@ -13,7 +13,10 @@ export default function Wonder({ onComplete, audioEnabled }) {
       narrate(wonderNarration(), true);
     }
     const timer = setTimeout(() => setCanProceed(true), 4000);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      stopNarration();
+    };
   }, [audioEnabled]);
 
   const handleDoubleIt = () => {
